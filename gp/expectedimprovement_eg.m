@@ -37,7 +37,7 @@ if ~isempty(x)
     Ef = Knx*a; Ef=Ef(1:size(x_new,1));
     invCKnxt = invC*Knx';
     Varf = Kn - sum(Knx.*invCKnxt',2); 
-    Varf=max(Varf(1:size(x_new,1)),0);
+    Varf=max(Varf(1:size(x_new,1)),eps);
     
     % expected improvement
     posvar=find(Varf>0);

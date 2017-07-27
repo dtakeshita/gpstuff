@@ -56,6 +56,9 @@ fx = @(mu)-nlin( F*S(mu) );
 cfse = gpcf_sexp('lengthScale',1,'magnSigma2',1,'magnSigma2_prior',prior_sqrtt('s2',10^2));
 %cfse = gpcf_sexp('lengthScale',0.2,'magnSigma2',1,'magnSigma2_prior',prior_sqrtt('s2',10^2));
 lik = lik_gaussian('sigma2', 0.001, 'sigma2_prior', prior_fixed);
+lik = lik_gaussian('sigma2', 0.001, 'sigma2_prior', prior_sinvchi2('s2',0.001));
+%change prior_fixed to prior_sinvchi or smthing.
+lik = lik_poisson();
 gp = gp_set('cf', {cfse}, 'lik', lik);
 
 % ----- conduct Bayesian optimization -----
@@ -65,8 +68,9 @@ gp = gp_set('cf', {cfse}, 'lik', lik);
 optimf = @fmincon;
 optdefault=struct('GradObj','on','LargeScale','off','Algorithm','SQP','TolFun',1e-6,'TolX',1e-3);
 opt=optimset(optdefault);
+%for varying the location of RF, set these bounds same as the range of x
 lb=0;     % lower bound of the input space
-ub=10;    % upper bound of the input space
+ub=15;    % upper bound of the input space
 
 % draw initial point
 rng(3)
@@ -75,9 +79,9 @@ y = fx(x);
 
 figure, % figure for visualization
 i1 = 1;
-maxiter = 15;
+maxiter = 30;
 improv = inf;   % improvement between two successive query points
-while i1 < maxiter && improv>1e-6
+while i1 < maxiter %&& improv>1e-6
 %while i1 < maxiter
 
     % Train the GP model for objective function and calculate variables
@@ -103,7 +107,7 @@ while i1 < maxiter && improv>1e-6
     fh_eg = @(x_new) expectedimprovement_eg(x_new, gp, x, a, invC, fmin); % The function handle to the Expected Improvement function
     %indbest = find(y == fmin);
     [~,indbest] = min(abs(y-fmin));%DT-modified
-    xstart = [linspace(0.5,9.5,5) x(indbest)+0.1*randn(1,2)];
+    xstart = [linspace(0.5,14.5,10) x(indbest)+0.1*randn(1,2)];
     for s1=1:length(xstart)
         x_new(s1) = optimf(fh_eg, xstart(s1), [], [], [], [], lb, ub, [], opt);
     end
