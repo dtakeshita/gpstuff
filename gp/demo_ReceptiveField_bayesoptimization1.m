@@ -48,25 +48,24 @@ F = F/norm(F,2);
 nlin = @(x)70*(1./(1+exp(-5*(x-1))));
 %S = @(mu)normpdf(xl,mu,sigC);
 S = @(mu)cell2mat(arrayfun(@(m)normpdf(xl,m,0.2)',mu,'unif',0))';
-fx = @(mu)-nlin( F*S(mu) );
+%fx = @(mu)poissrnd(nlin( F*S(mu) ));
+fx = @(mu)nlin( F*S(mu));
 
 %fx = @(x) 0.6*x -0.1*x.^2 + sin(2*x);
 
 % construct GP
 cfse = gpcf_sexp('lengthScale',1,'magnSigma2',1,'magnSigma2_prior',prior_sqrtt('s2',10^2));
-%cfse = gpcf_sexp('lengthScale',0.2,'magnSigma2',1,'magnSigma2_prior',prior_sqrtt('s2',10^2));
-lik = lik_gaussian('sigma2', 0.001, 'sigma2_prior', prior_fixed);
-lik = lik_gaussian('sigma2', 0.001, 'sigma2_prior', prior_sinvchi2('s2',0.001));
-%change prior_fixed to prior_sinvchi or smthing.
+cfc = gpcf_constant();
 lik = lik_poisson();
-gp = gp_set('cf', {cfse}, 'lik', lik);
-
+%gp = gp_set('cf', {cfse}, 'lik', lik);
+gp = gp_set('cf', {cfc cfse}, 'lik', lik, 'latent_method', 'Laplace');
 % ----- conduct Bayesian optimization -----
 % draw initial point
 
 % Set the options for optimizer of the acquisition function
 optimf = @fmincon;
-optdefault=struct('GradObj','on','LargeScale','off','Algorithm','SQP','TolFun',1e-6,'TolX',1e-3);
+%optdefault=struct('GradObj','on','LargeScale','off','Algorithm','SQP','TolFun',1e-6,'TolX',1e-3);
+optdefault=struct('GradObj','off','LargeScale','off','Algorithm','SQP','TolFun',1e-6,'TolX',1e-3);
 opt=optimset(optdefault);
 %for varying the location of RF, set these bounds same as the range of x
 lb=0;     % lower bound of the input space
@@ -75,7 +74,7 @@ ub=15;    % upper bound of the input space
 % draw initial point
 rng(3)
 x = 10*rand;
-y = fx(x);
+y = poissrnd(fx(x));
 
 figure, % figure for visualization
 i1 = 1;
@@ -90,33 +89,37 @@ while i1 < maxiter %&& improv>1e-6
     if i1>1
         gp = gp_optim(gp,x,y);
     end
-    [K, C] = gp_trcov(gp,x);
-    invC = inv(C);
-    a = C\y;
+%     [K, C] = gp_trcov(gp,x);
+%     invC = inv(C);
+%     a = C\y;
     fmin = min( fx(x) );
     
     % Calculate EI and posterior of the function for visualization purposes
-    EI = expectedimprovement_eg(xl, gp, x, a, invC, fmin);
+    %EI = expectedimprovement_eg(xl, gp, x, a, invC, fmin);
+    EI = expectedimprovement_eg_Poisson(xl, gp, x, y,fmin);
     [Ef,Varf] = gp_pred(gp, x, y, xl); 
+    Ef = -Ef;
 
     % optimize acquisition function
     %    Note! Opposite to the standard notation we minimize negative Expected
     %    Improvement since Matlab optimizers seek for functions minimum
     % Here we use multiple starting points for the optimization so that we
     % don't crash into suboptimal mode
-    fh_eg = @(x_new) expectedimprovement_eg(x_new, gp, x, a, invC, fmin); % The function handle to the Expected Improvement function
+    %fh_eg = @(x_new) expectedimprovement_eg(x_new, gp, x, a, invC, fmin); % The function handle to the Expected Improvement function
+    fh_eg = @(x_new) expectedimprovement_eg_Poisson(x_new, gp, x, y,fmin); % The function handle to the Expected Improvement function
     %indbest = find(y == fmin);
     [~,indbest] = min(abs(y-fmin));%DT-modified
     xstart = [linspace(0.5,14.5,10) x(indbest)+0.1*randn(1,2)];
     for s1=1:length(xstart)
         x_new(s1) = optimf(fh_eg, xstart(s1), [], [], [], [], lb, ub, [], opt);
     end
-    EIs = expectedimprovement_eg(x_new(:), gp, x, a, invC, fmin);    
+    %EIs = expectedimprovement_eg(x_new(:), gp, x, a, invC, fmin);    
+    EIs = expectedimprovement_eg_Poisson(x_new(:), gp, x, y,fmin);   
     x_new = x_new( find(EIs==min(EIs),1) ); % pick up the point where Expected Improvement is maximized
         
     % put new sample point to the list of evaluation points
     x(end+1) = x_new;
-    y(end+1) = fx(x(end));  % calculate the function value at query point
+    y(end+1) = poissrnd(fx(x(end)));  % calculate the function value at query point
     x=x(:);y=y(:);
 
     % visualize
